@@ -34,6 +34,18 @@ const ROLE_PERMISSION_ADDITIONS = {
   r_admin: ['requests.visitor'],
 };
 
+// حسابات نظامية أساسية تُضاف فقط إن لم يكن الحساب موجوداً (بالاسم).
+const SYSTEM_USERS = [
+  {
+    id: 'demo-visitor-00000000000000000001',
+    name: 'مراقب الزوار',
+    username: 'visitor',
+    password: '123456',
+    role: 'visitorSupervisor',
+    roleId: 'r_visitor',
+  },
+];
+
 function ensureRoles(data) {
   if (!Array.isArray(data.roles)) data.roles = [];
   let changed = false;
@@ -52,6 +64,16 @@ function ensureRoles(data) {
         role.permissionIds.push(p);
         changed = true;
       }
+    }
+  }
+  if (!Array.isArray(data.users)) data.users = [];
+  for (const u of SYSTEM_USERS) {
+    const exists = data.users.some(
+      (x) => x.username && x.username.toLowerCase() === u.username.toLowerCase()
+    );
+    if (!exists) {
+      data.users.push(JSON.parse(JSON.stringify(u)));
+      changed = true;
     }
   }
   return changed;
