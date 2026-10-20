@@ -151,7 +151,7 @@ class _MainShellState extends State<MainShell> {
       applicationName: 'تطبيق إدارة الشؤون لأتمتة العمليات',
       applicationVersion: '1.0.0',
       applicationLegalese: 'وحدة إدارة السكن — نسخة تشغيلية',
-      children: [Text('يتصل التطبيق بخادم مشترك (${widget.store.baseUrl}) لمزامنة طلبات المتعهدين بين جميع الأجهزة.')],
+      children: const [Text('يتصل التطبيق بخادم مشترك لمزامنة طلبات المتعهدين بين جميع الأجهزة. يمكن لمدير النظام ضبط عنوان الخادم من الإعدادات.')],
     );
   }
 }

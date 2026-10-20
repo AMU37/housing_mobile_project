@@ -12,21 +12,13 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _user = TextEditingController();
   final _pass = TextEditingController();
-  final _server = TextEditingController();
   String? _error;
   bool _busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _server.text = widget.store.baseUrl;
-  }
 
   @override
   void dispose() {
     _user.dispose();
     _pass.dispose();
-    _server.dispose();
     super.dispose();
   }
 
@@ -36,38 +28,12 @@ class _LoginScreenState extends State<LoginScreen> {
       _busy = true;
       _error = null;
     });
-    if (_server.text.trim().isNotEmpty && _server.text.trim() != widget.store.baseUrl) {
-      await widget.store.setBaseUrl(_server.text);
-    }
     final err = await widget.store.loginAsync(_user.text, _pass.text);
     if (!mounted) return;
     setState(() {
       _busy = false;
       _error = err;
     });
-  }
-
-  Future<void> _openServerDialog() async {
-    final controller = TextEditingController(text: widget.store.baseUrl);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('عنوان الخادم'),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.url,
-          decoration: const InputDecoration(labelText: 'عنوان الخادم', hintText: 'http://192.168.1.10:8080/api'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('حفظ')),
-        ],
-      ),
-    );
-    if (result != null && result.trim().isNotEmpty) {
-      await widget.store.setBaseUrl(result);
-      if (mounted) setState(() => _server.text = widget.store.baseUrl);
-    }
   }
 
   @override
@@ -127,29 +93,17 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 14),
               AppCard(
                 padding: const EdgeInsets.all(14),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  Row(children: [
-                    Icon(
-                      widget.store.isOnline ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
-                      size: 18,
-                      color: widget.store.isOnline ? const Color(0xFF16846B) : const Color(0xFFC2414B),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(
-                      widget.store.isOnline ? 'متصل بالخادم المشترك' : 'غير متصل بالخادم',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: navy),
-                    )),
-                    TextButton(
-                      onPressed: _openServerDialog,
-                      child: const Text('تغيير'), 
-                    ),
-                  ]),
-                  Text(widget.store.baseUrl, style: const TextStyle(fontSize: 11, color: muted)),
-                  const SizedBox(height: 8),
-                  Text(
-                    'يجب أن تشير جميع الأجهزة (المتعهد ومراقب السكن) إلى نفس عنوان الخادم لوصول الطلبات.',
-                    style: const TextStyle(fontSize: 10, color: muted),
+                child: Row(children: [
+                  Icon(
+                    widget.store.isOnline ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+                    size: 18,
+                    color: widget.store.isOnline ? const Color(0xFF16846B) : const Color(0xFFC2414B),
                   ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    widget.store.isOnline ? 'متصل بالخادم المشترك' : 'سيتم الاتصال بالخادم عند الدخول',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: navy),
+                  )),
                 ]),
               ),
               const SizedBox(height: 20),

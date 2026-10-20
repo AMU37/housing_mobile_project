@@ -12,7 +12,7 @@ class AdminScreen extends StatelessWidget {
     return AnimatedBuilder(
       animation: store,
       builder: (context, _) => DefaultTabController(
-        length: 4,
+        length: 5,
         child: Scaffold(
           backgroundColor: canvas,
           appBar: AppBar(
@@ -35,6 +35,7 @@ class AdminScreen extends StatelessWidget {
                 Tab(text: 'الأدوار'),
                 Tab(text: 'الصلاحيات'),
                 Tab(text: 'المتعهدون'),
+                Tab(text: 'الخادم'),
               ],
             ),
           ),
@@ -44,6 +45,7 @@ class AdminScreen extends StatelessWidget {
               _RolesTab(store: store),
               _PermissionsTab(store: store),
               _ContractorsTab(store: store),
+              _ServerTab(store: store),
             ],
           ),
         ),
@@ -506,6 +508,119 @@ class _RoleSheetState extends State<_RoleSheet> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------- Server
+
+class _ServerTab extends StatefulWidget {
+  const _ServerTab({required this.store});
+  final HousingStore store;
+  @override
+  State<_ServerTab> createState() => _ServerTabState();
+}
+
+class _ServerTabState extends State<_ServerTab> {
+  late final TextEditingController _server;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _server = TextEditingController(text: widget.store.baseUrl);
+  }
+
+  @override
+  void dispose() {
+    _server.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final url = _server.text.trim();
+    if (url.isEmpty) return;
+    setState(() => _busy = true);
+    await widget.store.setBaseUrl(url);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _server.text = widget.store.baseUrl;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(widget.store.isOnline ? 'تم الاتصال بالخادم وتحديث العنوان' : 'تم حفظ العنوان، لكن تعذّر الاتصال بالخادم'),
+      backgroundColor: widget.store.isOnline ? teal : const Color(0xFFC2414B),
+    ));
+  }
+
+  Future<void> _sync() async {
+    setState(() => _busy = true);
+    await widget.store.refreshFromServer();
+    if (!mounted) return;
+    setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.store,
+      builder: (context, _) {
+        final online = widget.store.isOnline;
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const SectionTitle('إعدادات الخادم', subtitle: 'اتصال التطبيق بالخادم المشترك'),
+            const SizedBox(height: 10),
+            AppCard(
+              padding: const EdgeInsets.all(16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Row(children: [
+                  Icon(online ? Icons.cloud_done_rounded : Icons.cloud_off_rounded, size: 20, color: online ? const Color(0xFF16846B) : const Color(0xFFC2414B)),
+                  const SizedBox(width: 8),
+                  Text(online ? 'متصل بالخادم' : 'غير متصل بالخادم', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: navy)),
+                ]),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _server,
+                  keyboardType: TextInputType.url,
+                  decoration: const InputDecoration(
+                    labelText: 'عنوان الخادم',
+                    hintText: 'https://example.onrender.com/api',
+                    prefixIcon: Icon(Icons.dns_outlined),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'يجب أن تشير جميع أجهزة المتعهدين ومراقبي السكن إلى نفس عنوان الخادم لوصول الطلبات بينها.',
+                  style: TextStyle(fontSize: 11, color: muted),
+                ),
+                if (widget.store.lastSyncError != null) ...[
+                  const SizedBox(height: 10),
+                  Text(widget.store.lastSyncError!, style: const TextStyle(fontSize: 11, color: Color(0xFFC2414B), fontWeight: FontWeight.w700)),
+                ],
+                const SizedBox(height: 16),
+                PrimaryAction(
+                  label: _busy ? 'جارٍ الحفظ...' : 'حفظ ومزامنة',
+                  icon: Icons.save_rounded,
+                  onPressed: _busy ? null : _save,
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: (_busy || widget.store.isSyncing) ? null : _sync,
+                  icon: const Icon(Icons.sync_rounded, size: 18),
+                  label: Text(widget.store.isSyncing ? 'جارٍ المزامنة...' : 'مزامنة الآن'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: teal,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+                    side: const BorderSide(color: Color(0xFFB7E0DB)),
+                  ),
+                ),
+              ]),
+            ),
+          ],
+        );
+      },
     );
   }
 }

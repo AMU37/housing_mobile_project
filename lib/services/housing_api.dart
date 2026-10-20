@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+
+import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 import '../models/housing_models.dart';
@@ -15,6 +16,8 @@ class ApiException implements Exception {
 }
 
 /// عميل REST خفيف يتصل بخادم إدارة السكن المشترك.
+///
+/// يعتمد على حزمة `http` ليعمل على الويب (Android/iOS/Web) معاً.
 class HousingApi {
   HousingApi({String? baseUrl, this.token})
       : baseUrl = _normalize(baseUrl ?? AppConfig.defaultBaseUrl);
@@ -97,28 +100,27 @@ class HousingApi {
           .then((d) => ContractorRequest.fromJson((d as Map).cast<String, dynamic>()));
 
   Future<dynamic> _request(String method, String path, {Map<String, dynamic>? body}) async {
-    final client = HttpClient()..connectionTimeout = AppConfig.apiTimeout;
+    final uri = Uri.parse('$baseUrl${path.startsWith('/') ? path : '/$path'}');
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'Content-Type': 'application/json; charset=utf-8',
+      if (token != null && token!.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+    final encoded = body != null ? jsonEncode(body) : null;
     try {
-      final uri = Uri.parse('$baseUrl${path.startsWith('/') ? path : '/$path'}');
-      final HttpClientRequest request;
+      late http.Response response;
       switch (method) {
         case 'POST':
-          request = await client.postUrl(uri).timeout(AppConfig.apiTimeout);
+          response = await http.post(uri, headers: headers, body: encoded).timeout(AppConfig.apiTimeout);
           break;
         case 'PATCH':
-          request = await client.patchUrl(uri).timeout(AppConfig.apiTimeout);
+          response = await http.patch(uri, headers: headers, body: encoded).timeout(AppConfig.apiTimeout);
           break;
         default:
-          request = await client.getUrl(uri).timeout(AppConfig.apiTimeout);
+          response = await http.get(uri, headers: headers).timeout(AppConfig.apiTimeout);
       }
-      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
-      if (token != null && token!.isNotEmpty) {
-        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
-      }
-      if (body != null) request.write(jsonEncode(body));
-      final response = await request.close().timeout(AppConfig.apiTimeout);
-      final responseText = await response.transform(utf8.decoder).join();
+      final responseText =
+          utf8.decode(response.bodyBytes, allowMalformed: true);
       final decoded = responseText.trim().isEmpty ? null : _tryDecode(responseText);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final message = decoded is Map && decoded['error'] != null
@@ -129,14 +131,12 @@ class HousingApi {
       return decoded;
     } on ApiException {
       rethrow;
-    } on SocketException {
-      throw ApiException('تعذّر الاتصال بالخادم — تحقق من الشبكة وعنوان الخادم');
     } on TimeoutException {
-      throw ApiException('انتهت مهلة الاتصال بالخادم');
+      throw ApiException('الخادم يستغرق وقتاً في الاستيقاظ (الخطة المجانية). أعد المحاولة بعد لحظات');
     } on FormatException {
       throw ApiException('رد غير مفهوم من الخادم');
-    } finally {
-      client.close(force: true);
+    } catch (e) {
+      throw ApiException('تعذّر الاتصال بالخادم — تحقق من الشبكة وعنوان الخادم');
     }
   }
 

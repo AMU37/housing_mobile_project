@@ -26,5 +26,9 @@ class AppConfig {
   /// مفتاح تخزين عنوان الخادم المخصّص على الجهاز.
   static const String baseUrlPrefsKey = 'housing_api_base_url';
 
-  static const Duration apiTimeout = Duration(seconds: 15);
+  /// مهلة الاتصال بالخادم.
+  ///
+  /// ملاحظة: الخطة المجانية على Render تُنيم الخادم عند عدم الاستخدام،
+  /// ويستغرق استيقاظه حتى ~50 ثانية، لذا نمنح مهلة كافية لأول طلب.
+  static const Duration apiTimeout = Duration(seconds: 90);
 }
