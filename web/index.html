@@ -31,8 +31,22 @@
 
   <title>housing_mobile</title>
   <link rel="manifest" href="manifest.json">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
 </head>
 <body>
+  <script>
+    // إلغاء تسجيل أي Service Worker قديم لمنع عرض نسخة مخزّنة قديمة.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        for (var i = 0; i < regs.length; i++) { regs[i].unregister(); }
+      });
+    }
+  </script>
+  <script>
+    window.flutterConfiguration = { serviceWorkerVersion: String(Date.now()) };
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
