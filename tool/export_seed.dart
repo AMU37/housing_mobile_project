@@ -25,9 +25,16 @@ const List<Map<String, dynamic>> _roles = [
   {
     'id': 'r_security',
     'name': 'مشرف الأمن',
-    'description': 'يعتمد الطلبات أمنياً وينفّذها',
+    'description': 'يعتمد الطلبات أمنياً (المرحلة الأمنية)',
     'isSystem': true,
     'permissionIds': ['operations.view', 'requests.security'],
+  },
+  {
+    'id': 'r_visitor',
+    'name': 'مراقب الزوار',
+    'description': 'يدقّق بيانات العامل (كود الموظف والعمر) ويعتمد الطلبات',
+    'isSystem': true,
+    'permissionIds': ['operations.view', 'requests.visitor'],
   },
   {
     'id': 'r_contractor',
@@ -51,6 +58,7 @@ const List<Map<String, dynamic>> _roles = [
       'housing.manage',
       'requests.supervise',
       'requests.security',
+      'requests.visitor',
       'admin.users',
     ],
   },

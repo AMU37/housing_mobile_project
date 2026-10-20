@@ -355,7 +355,7 @@ class HousingRequest {
       );
 }
 
-enum UserRole { admin, housingSupervisor, securitySupervisor, contractor }
+enum UserRole { admin, housingSupervisor, securitySupervisor, visitorSupervisor, contractor }
 
 extension UserRoleX on UserRole {
   String get label {
@@ -366,6 +366,8 @@ extension UserRoleX on UserRole {
         return 'مراقب السكن';
       case UserRole.securitySupervisor:
         return 'مشرف الأمن';
+      case UserRole.visitorSupervisor:
+        return 'مراقب الزوار';
       case UserRole.contractor:
         return 'متعهد/مقاول';
     }
@@ -379,6 +381,8 @@ extension UserRoleX on UserRole {
         return 'r_housing';
       case UserRole.securitySupervisor:
         return 'r_security';
+      case UserRole.visitorSupervisor:
+        return 'r_visitor';
       case UserRole.contractor:
         return 'r_contractor';
     }
@@ -404,6 +408,7 @@ const List<AppPermission> appPermissionCatalog = [
   AppPermission('housing.manage', 'إدارة السكن والتنقلات', 'العمليات'),
   AppPermission('requests.supervise', 'اعتماد طلبات المتعهدين (مراقب السكن)', 'الاعتماد'),
   AppPermission('requests.security', 'الاعتماد الأمني (مشرف الأمن)', 'الاعتماد'),
+  AppPermission('requests.visitor', 'اعتماد مراقب الزوار (كود الموظف والعمر)', 'الاعتماد'),
   AppPermission('contractor.portal', 'بوابة المتعهد/المقاول', 'خاص'),
   AppPermission('admin.users', 'إدارة المستخدمين والأدوار', 'الإدارة'),
 ];
@@ -476,6 +481,7 @@ class AppUser {
 
   bool get isSupervisor => role == UserRole.housingSupervisor;
   bool get isSecuritySupervisor => role == UserRole.securitySupervisor;
+  bool get isVisitorSupervisor => role == UserRole.visitorSupervisor;
   bool get isContractor => role == UserRole.contractor;
   bool get isAdmin => role == UserRole.admin;
 
@@ -726,6 +732,7 @@ class ContractorRequest {
     required this.createdAt,
     this.housingApprover = '',
     this.securityApprover = '',
+    this.visitorApprover = '',
     this.reviewedAt,
     this.reviewNotes = '',
   });
@@ -756,22 +763,53 @@ class ContractorRequest {
       ? ''
       : '${workerBirthDate!.year}-${workerBirthDate!.month.toString().padLeft(2, '0')}-${workerBirthDate!.day.toString().padLeft(2, '0')}';
 
+  /// عمر العامل بالسنوات محسوباً من تاريخ الميلاد.
+  int? get workerAge {
+    final bd = workerBirthDate;
+    if (bd == null) return null;
+    final now = DateTime.now();
+    var age = now.year - bd.year;
+    if (now.month < bd.month || (now.month == bd.month && now.day < bd.day)) {
+      age--;
+    }
+    return age < 0 ? 0 : age;
+  }
+
   /// مرحلة الطلب:
-  /// 'housing' بانتظار مراقب السكن، 'security' بانتظار مشرف الأمن،
-  /// 'done' مكتمل منفّذ، 'rejected' مرفوض.
+  /// طلب الإضافة: 'security' ثم 'visitor' ثم 'housing' ثم 'done'.
+  /// طلب الاستبعاد: 'housing' ثم 'security' ثم 'visitor' ثم 'done'.
+  /// و'rejected' مرفوض من أي مرحلة.
   final String stage;
   final DateTime createdAt;
   final String housingApprover;
   final String securityApprover;
+
+  /// اسم مراقب الزوار الذي اعتمد الطلب.
+  final String visitorApprover;
   final DateTime? reviewedAt;
   final String reviewNotes;
 
   bool get isAdd => requestType == 'new_worker';
   bool get awaitingHousing => stage == 'housing';
   bool get awaitingSecurity => stage == 'security';
+  bool get awaitingVisitor => stage == 'visitor';
   bool get isDone => stage == 'done';
   bool get isRejected => stage == 'rejected';
-  bool get isPending => awaitingHousing || awaitingSecurity;
+  bool get isPending => awaitingHousing || awaitingSecurity || awaitingVisitor;
+
+  /// المرحلة التالية بعد اعتماد المرحلة الحالية حسب نوع الطلب.
+  String get nextStage {
+    switch (stage) {
+      case 'security':
+        return 'visitor';
+      case 'visitor':
+        return isAdd ? 'housing' : 'done';
+      case 'housing':
+        return isAdd ? 'done' : 'security';
+      default:
+        return stage;
+    }
+  }
 
   String get typeLabel => isAdd ? 'إضافة عامل' : 'استبعاد عامل';
 
@@ -781,6 +819,8 @@ class ContractorRequest {
         return 'بانتظار مراقب السكن';
       case 'security':
         return 'بانتظار مشرف الأمن';
+      case 'visitor':
+        return 'بانتظار مراقب الزوار';
       case 'done':
         return 'مكتمل';
       case 'rejected':
@@ -794,8 +834,10 @@ class ContractorRequest {
     String? stage,
     String? bedId,
     String? buildingId,
+    String? employeeCode,
     String? housingApprover,
     String? securityApprover,
+    String? visitorApprover,
     DateTime? reviewedAt,
     String? reviewNotes,
   }) {
@@ -805,7 +847,7 @@ class ContractorRequest {
       contractorName: contractorName,
       requestType: requestType,
       workerName: workerName,
-      employeeCode: employeeCode,
+      employeeCode: employeeCode ?? this.employeeCode,
       jobTitle: jobTitle,
       workerCardNumber: workerCardNumber,
       workerBirthDate: workerBirthDate,
@@ -817,6 +859,7 @@ class ContractorRequest {
       createdAt: createdAt,
       housingApprover: housingApprover ?? this.housingApprover,
       securityApprover: securityApprover ?? this.securityApprover,
+      visitorApprover: visitorApprover ?? this.visitorApprover,
       reviewedAt: reviewedAt ?? this.reviewedAt,
       reviewNotes: reviewNotes ?? this.reviewNotes,
     );
@@ -840,6 +883,7 @@ class ContractorRequest {
         'createdAt': createdAt.toIso8601String(),
         'housingApprover': housingApprover,
         'securityApprover': securityApprover,
+        'visitorApprover': visitorApprover,
         'reviewedAt': reviewedAt?.toIso8601String(),
         'reviewNotes': reviewNotes,
       };
@@ -858,10 +902,11 @@ class ContractorRequest {
         buildingId: j['buildingId'] as String?,
         bedId: j['bedId'] as String?,
         reason: (j['reason'] ?? '') as String,
-        stage: (j['stage'] ?? 'housing') as String,
+        stage: (j['stage'] ?? 'security') as String,
         createdAt: _parseDate(j['createdAt']) ?? DateTime(2026, 1, 1),
         housingApprover: (j['housingApprover'] ?? '') as String,
         securityApprover: (j['securityApprover'] ?? '') as String,
+        visitorApprover: (j['visitorApprover'] ?? '') as String,
         reviewedAt: _parseDate(j['reviewedAt']),
         reviewNotes: (j['reviewNotes'] ?? '') as String,
       );

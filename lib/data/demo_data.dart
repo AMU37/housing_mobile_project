@@ -2330,6 +2330,7 @@ final List<HousingRequest> demoRequests = <HousingRequest>[
 final List<AppUser> demoUsers = <AppUser>[
   AppUser(id: '2da774c247354ac6af1699d84dcb7ee5', name: 'رضوان الشميري', username: 'supervisor', password: '123456', role: UserRole.housingSupervisor),
   AppUser(id: '563a2f5d3f6a4024bb3e6ad42eb99c81', name: 'مفيد العامري', username: 'security', password: '123456', role: UserRole.securitySupervisor),
+  AppUser(id: 'demo-visitor-00000000000000000001', name: 'مراقب الزوار', username: 'visitor', password: '123456', role: UserRole.visitorSupervisor),
   AppUser(id: 'demo-admin-0000000000000000000001', name: 'مدير النظام', username: 'admin', password: '123456', role: UserRole.admin),
   AppUser(id: 'user-6eeaabb3ebfe4bbb8e80820c60eabfc8', name: 'المطعم', username: 'ctr01', password: '123456', role: UserRole.contractor, contractorId: '6eeaabb3ebfe4bbb8e80820c60eabfc8', contractorName: 'المطعم'),
   AppUser(id: 'user-3cb01df6d68a401bb0af2e67ecab4d6a', name: 'متعهد عمال الدكة', username: 'ctr02', password: '123456', role: UserRole.contractor, contractorId: '3cb01df6d68a401bb0af2e67ecab4d6a', contractorName: 'متعهد عمال الدكة'),

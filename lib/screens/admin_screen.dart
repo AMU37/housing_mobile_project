@@ -143,7 +143,14 @@ class _UsersTab extends StatelessWidget {
         ],
       ),
     );
-    if (confirmed == true) store.deleteUser(u.id);
+    if (confirmed == true) {
+      final messenger = ScaffoldMessenger.of(context);
+      final err = await store.removeUser(u.id);
+      messenger.showSnackBar(SnackBar(
+        content: Text(err ?? 'تم حذف المستخدم'),
+        backgroundColor: err != null ? const Color(0xFFC2414B) : null,
+      ));
+    }
   }
 }
 
@@ -198,13 +205,14 @@ class _UserSheetState extends State<_UserSheet> {
   bool get _roleHasContractor =>
       widget.store.roleById(roleId)?.permissionIds.contains('contractor.portal') ?? false;
 
-  void _save() {
+  Future<void> _save() async {
     if (!formKey.currentState!.validate()) return;
     final role = widget.store.userRoleForRoleId(roleId);
     final contractor = widget.store.contractorById(contractorId);
     setState(() => error = '');
+    String? err;
     if (widget.existing == null) {
-      final err = widget.store.createUser(
+      err = await widget.store.createUser(
         name: name.text,
         username: username.text,
         password: password.text,
@@ -214,16 +222,8 @@ class _UserSheetState extends State<_UserSheet> {
         contractorId: _roleHasContractor ? contractorId : null,
         contractorName: _roleHasContractor ? (contractor?.name ?? '') : '',
       );
-      if (err != null) {
-        setState(() => error = err);
-        return;
-      }
     } else {
-      if (widget.store.usernameTaken(username.text, exceptId: widget.existing!.id)) {
-        setState(() => error = 'اسم المستخدم مستخدم مسبقاً');
-        return;
-      }
-      widget.store.updateUser(AppUser(
+      err = await widget.store.saveExistingUser(AppUser(
         id: widget.existing!.id,
         name: name.text.trim(),
         username: username.text.trim(),
@@ -234,6 +234,12 @@ class _UserSheetState extends State<_UserSheet> {
         contractorId: _roleHasContractor ? contractorId : null,
         contractorName: _roleHasContractor ? (contractor?.name ?? '') : '',
       ));
+    }
+    if (!mounted) return;
+    if (err != null) {
+      final msg = err;
+      setState(() => error = msg);
+      return;
     }
     final messenger = ScaffoldMessenger.of(context);
     Navigator.pop(context);
@@ -835,7 +841,7 @@ class _ContractorSheetState extends State<_ContractorSheet> {
     super.dispose();
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!formKey.currentState!.validate()) return;
     setState(() => error = '');
     final q = int.tryParse(quota.text.trim()) ?? 0;
@@ -854,7 +860,7 @@ class _ContractorSheetState extends State<_ContractorSheet> {
       }
       final created = widget.store.contractors.last;
       if (createLogin) {
-        final uerr = widget.store.createUser(
+        final uerr = await widget.store.createUser(
           name: created.name,
           username: username.text,
           password: password.text,

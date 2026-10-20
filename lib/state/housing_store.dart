@@ -341,9 +341,16 @@ class HousingStore extends ChangeNotifier {
     AppRole(
       id: 'r_security',
       name: 'مشرف الأمن',
-      description: 'يعتمد الطلبات أمنياً وينفّذها',
+      description: 'يعتمد الطلبات أمنياً (المرحلة الأمنية)',
       isSystem: true,
       permissionIds: {'operations.view', 'requests.security'},
+    ),
+    AppRole(
+      id: 'r_visitor',
+      name: 'مراقب الزوار',
+      description: 'يدقّق بيانات العامل (كود الموظف والعمر) ويعتمد الطلبات',
+      isSystem: true,
+      permissionIds: {'operations.view', 'requests.visitor'},
     ),
     AppRole(
       id: 'r_contractor',
@@ -367,6 +374,7 @@ class HousingStore extends ChangeNotifier {
         'housing.manage',
         'requests.supervise',
         'requests.security',
+        'requests.visitor',
         'admin.users',
       },
     ),
@@ -377,6 +385,7 @@ class HousingStore extends ChangeNotifier {
   bool get isLoggedIn => currentUser != null;
   bool get isSupervisor => currentUser?.isSupervisor ?? false;
   bool get isSecuritySupervisor => currentUser?.isSecuritySupervisor ?? false;
+  bool get isVisitorSupervisor => currentUser?.isVisitorSupervisor ?? false;
   bool get isContractor => currentUser?.isContractor ?? false;
   String? get currentContractorId => currentUser?.contractorId;
 
@@ -404,7 +413,7 @@ class HousingStore extends ChangeNotifier {
   bool get usesContractorPortal =>
       hasContractorPortal &&
       availableViewTabs.isEmpty &&
-      !canAny(['requests.supervise', 'requests.security', 'admin.users']);
+      !canAny(['requests.supervise', 'requests.security', 'requests.visitor', 'admin.users']);
 
   /// يشتق نوع المستخدم النظامي من الدور المختار (للربط مع بوابة المتعهد).
   UserRole userRoleForRoleId(String roleId) {
@@ -412,6 +421,11 @@ class HousingStore extends ChangeNotifier {
     if (role == null) return UserRole.housingSupervisor;
     if (role.permissionIds.contains('admin.users')) return UserRole.admin;
     if (role.permissionIds.contains('contractor.portal')) return UserRole.contractor;
+    if (role.permissionIds.contains('requests.visitor') &&
+        !role.permissionIds.contains('requests.supervise') &&
+        !role.permissionIds.contains('requests.security')) {
+      return UserRole.visitorSupervisor;
+    }
     if (role.permissionIds.contains('requests.security') &&
         !role.permissionIds.contains('requests.supervise')) {
       return UserRole.securitySupervisor;
@@ -518,8 +532,8 @@ class HousingStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// يعيد null عند النجاح أو رسالة خطأ.
-  String? createUser({
+  /// ينشئ مستخدماً ويحفظه في الخادم. يعيد null عند النجاح أو رسالة خطأ.
+  Future<String?> createUser({
     required String name,
     required String username,
     required String password,
@@ -528,12 +542,75 @@ class HousingStore extends ChangeNotifier {
     String phone = '',
     String? contractorId,
     String contractorName = '',
-  }) {
+  }) async {
     if (name.trim().isEmpty) return 'يرجى إدخال الاسم';
     if (username.trim().isEmpty) return 'يرجى إدخال اسم المستخدم';
     if (usernameTaken(username)) return 'اسم المستخدم مستخدم مسبقاً';
     if (password.isEmpty) return 'يرجى إدخال كلمة المرور';
+
+    if (_online && _api != null) {
+      try {
+        final saved = await _api!.saveUser({
+          'name': name.trim(),
+          'username': username.trim(),
+          'password': password,
+          'role': role.name,
+          'roleId': roleId,
+          'phone': phone.trim(),
+          'contractorId': contractorId,
+          'contractorName': contractorName.trim(),
+        });
+        users.insert(0, saved);
+        notifyListeners();
+        return null;
+      } catch (e) {
+        return e is ApiException ? e.message : 'تعذّر حفظ المستخدم: $e';
+      }
+    }
     addUser(name: name, username: username, password: password, role: role, roleId: roleId, phone: phone, contractorId: contractorId, contractorName: contractorName);
+    return null;
+  }
+
+  /// يحدّث مستخدماً ويحفظه في الخادم. يعيد null عند النجاح أو رسالة خطأ.
+  Future<String?> saveExistingUser(AppUser updated) async {
+    if (updated.name.trim().isEmpty) return 'يرجى إدخال الاسم';
+    if (updated.username.trim().isEmpty) return 'يرجى إدخال اسم المستخدم';
+    if (usernameTaken(updated.username, exceptId: updated.id)) {
+      return 'اسم المستخدم مستخدم مسبقاً';
+    }
+    if (_online && _api != null) {
+      try {
+        final saved = await _api!.saveUser({
+          'id': updated.id,
+          'name': updated.name.trim(),
+          'username': updated.username.trim(),
+          'password': updated.password,
+          'role': updated.role.name,
+          'roleId': updated.roleId,
+          'phone': updated.phone.trim(),
+          'contractorId': updated.contractorId,
+          'contractorName': updated.contractorName.trim(),
+        });
+        updateUser(saved);
+        return null;
+      } catch (e) {
+        return e is ApiException ? e.message : 'تعذّر حفظ المستخدم: $e';
+      }
+    }
+    updateUser(updated);
+    return null;
+  }
+
+  /// يحذف مستخدماً من الخادم. يعيد null عند النجاح أو رسالة خطأ.
+  Future<String?> removeUser(String id) async {
+    if (_online && _api != null) {
+      try {
+        await _api!.deleteUser(id);
+      } catch (e) {
+        return e is ApiException ? e.message : 'تعذّر حذف المستخدم: $e';
+      }
+    }
+    deleteUser(id);
     return null;
   }
 
@@ -802,6 +879,10 @@ class HousingStore extends ChangeNotifier {
       contractorRequests.where((r) => r.awaitingSecurity).toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
+  List<ContractorRequest> get visitorPendingRequests =>
+      contractorRequests.where((r) => r.awaitingVisitor).toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
   /// ينشئ طلب إضافة/استبعاد ويرسله للخادم المشترك.
   /// يعيد null عند النجاح أو رسالة خطأ.
   Future<String?> submitContractorRequest({
@@ -822,8 +903,15 @@ class HousingStore extends ChangeNotifier {
       if (workerCardNumber.trim().isEmpty) return 'يرجى إدخال رقم البطاقة';
       if (workerBirthDate == null) return 'يرجى تحديد تاريخ الميلاد';
       if (workerBirthPlace.trim().isEmpty) return 'يرجى إدخال مكان الميلاد';
+      final now = DateTime.now();
+      var age = now.year - workerBirthDate.year;
+      if (now.month < workerBirthDate.month ||
+          (now.month == workerBirthDate.month && now.day < workerBirthDate.day)) {
+        age--;
+      }
+      if (age < 18) return 'لا يسمح بإضافة موظف أقل من 18 عاماً';
       if (freeBedCountForContractor(contractorId) <= 0) {
-        return 'لا يوجد فراغ في السكن التابع للمتعهد (${c.name})';
+        return 'لا يوجد سرير متاح لدى المتعهد (${c.name})';
       }
     }
     if (type == 'remove_worker') {
@@ -831,6 +919,8 @@ class HousingStore extends ChangeNotifier {
           .any((r) => r.name == workerName.trim() || (employeeCode.isNotEmpty && r.employeeCode == employeeCode));
       if (!exists) return 'العامل غير موجود ضمن عمالة المتعهد';
     }
+
+    final startStage = type == 'new_worker' ? 'security' : 'housing';
 
     if (_online && _api != null) {
       try {
@@ -867,7 +957,7 @@ class HousingStore extends ChangeNotifier {
       workerBirthDate: workerBirthDate,
       workerBirthPlace: workerBirthPlace.trim(),
       reason: reason.trim(),
-      stage: 'housing',
+      stage: startStage,
       createdAt: DateTime.now(),
     );
     contractorRequests.insert(0, local);
@@ -887,8 +977,61 @@ class HousingStore extends ChangeNotifier {
     return null;
   }
 
-  /// موافقة مراقب السكن: تحقّق من الفراغ ثم تُحوّل الطلب لمشرف الأمن.
-  /// يعيد null عند النجاح أو رسالة خطأ.
+  /// اعتماد المرحلة الأمنية (مشرف الأمن).
+  /// في طلب الإضافة: يبدأ من الأمن → ينتقل لمراقب الزوار.
+  /// في طلب الاستبعاد: هو المرحلة الوسطى → ينتقل لمراقب الزوار.
+  Future<String?> approveSecurityStage(String requestId, {String approver = '', String notes = ''}) async {
+    final index = contractorRequests.indexWhere((r) => r.id == requestId);
+    if (index < 0) return 'الطلب غير موجود';
+    final req = contractorRequests[index];
+    if (!req.awaitingSecurity) return 'الطلب ليس بانتظار مشرف الأمن';
+    return _advanceStage(
+      index, req,
+      approverName: approver.isEmpty ? (currentUser?.name ?? 'مشرف الأمن') : approver,
+      notes: notes,
+      securityApprover: approver.isEmpty ? (currentUser?.name ?? 'مشرف الأمن') : approver,
+    );
+  }
+
+  /// اعتماد مراقب الزوار. في طلب الإضافة يدخل كود الموظف إجبارياً.
+  /// في طلب الإضافة: المرحلة الوسطى → ينتقل لمراقب السكن للتنفيذ.
+  /// في طلب الاستبعاد: المرحلة الأخيرة → ينفّذ الحذف.
+  Future<String?> approveVisitorStage(String requestId,
+      {String approver = '', String notes = '', String employeeCode = ''}) async {
+    final index = contractorRequests.indexWhere((r) => r.id == requestId);
+    if (index < 0) return 'الطلب غير موجود';
+    var req = contractorRequests[index];
+    if (!req.awaitingVisitor) return 'الطلب ليس بانتظار مراقب الزوار';
+
+    if (req.isAdd && employeeCode.trim().isEmpty) {
+      return 'يرجى إدخال كود الموظف قبل الاعتماد';
+    }
+    if (req.isAdd) {
+      final now = DateTime.now();
+      final bd = req.workerBirthDate;
+      if (bd != null) {
+        var age = now.year - bd.year;
+        if (now.month < bd.month || (now.month == bd.month && now.day < bd.day)) age--;
+        if (age < 18) return 'لا يسمح بإضافة موظف أقل من 18 عاماً';
+      }
+    }
+
+    final visitorName = approver.isEmpty ? (currentUser?.name ?? 'مراقب الزوار') : approver;
+    if (employeeCode.trim().isNotEmpty) {
+      req = req.copyWith(employeeCode: employeeCode.trim());
+      contractorRequests[index] = req;
+    }
+    return _advanceStage(
+      index, req,
+      approverName: visitorName,
+      notes: notes,
+      visitorApprover: visitorName,
+      employeeCode: employeeCode.trim(),
+    );
+  }
+
+  /// اعتماد مراقب السكن. في طلب الإضافة: المرحلة الأخيرة → ينفّذ التسكين.
+  /// في طلب الاستبعاد: المرحلة الأولى → ينتقل للأمن.
   Future<String?> approveHousingStage(String requestId, {String approver = '', String notes = ''}) async {
     final index = contractorRequests.indexWhere((r) => r.id == requestId);
     if (index < 0) return 'الطلب غير موجود';
@@ -897,77 +1040,81 @@ class HousingStore extends ChangeNotifier {
     if (req.isAdd && freeBedCountForContractor(req.contractorId) <= 0) {
       return 'لا يوجد فراغ في السكن التابع للمتعهد';
     }
-    if (_online && _api != null) {
-      try {
-        final updated = await _api!.approveHousing(requestId, notes: notes);
-        contractorRequests[index] = updated;
-        notifyListeners();
-        return null;
-      } catch (e) {
-        return e is ApiException ? e.message : 'تعذّر اعتماد الطلب: $e';
-      }
-    }
-    contractorRequests[index] = req.copyWith(
-      stage: 'security',
+    return _advanceStage(
+      index, req,
+      approverName: approver.isEmpty ? (currentUser?.name ?? 'مراقب السكن') : approver,
+      notes: notes,
       housingApprover: approver.isEmpty ? (currentUser?.name ?? 'مراقب السكن') : approver,
-      reviewedAt: DateTime.now(),
-      reviewNotes: notes,
     );
-    notifyListeners();
-    return null;
   }
 
-  /// موافقة مشرف الأمن: تنفيذ الطلب (تسكين/استبعاد) وإغلاقه.
-  /// يعيد null عند النجاح أو رسالة خطأ.
-  Future<String?> approveSecurityStage(String requestId, {String approver = '', String notes = ''}) async {
-    final index = contractorRequests.indexWhere((r) => r.id == requestId);
-    if (index < 0) return 'الطلب غير موجود';
-    final req = contractorRequests[index];
-    if (!req.awaitingSecurity) return 'الطلب ليس بانتظار مشرف الأمن';
-    if (req.isAdd && freeBedsForContractor(req.contractorId).isEmpty) {
-      return 'لا يوجد فراغ متاح للتنفيذ';
-    }
+  /// ينفّذ انتقال المرحلة حسب نوع الطلب، وينفّذ التسكين/الحذف في المرحلة الأخيرة.
+  Future<String?> _advanceStage(
+    int index,
+    ContractorRequest req, {
+    required String approverName,
+    String notes = '',
+    String? housingApprover,
+    String? securityApprover,
+    String? visitorApprover,
+    String employeeCode = '',
+  }) async {
+    final isExecutionStage = req.isAdd ? req.stage == 'housing' : req.stage == 'visitor';
+
     if (_online && _api != null) {
       try {
-        final updated = await _api!.approveSecurity(requestId, notes: notes);
+        final updated = await _api!.approveStage(
+          requestId: req.id,
+          stage: req.stage,
+          notes: notes,
+          employeeCode: employeeCode,
+        );
         contractorRequests[index] = updated;
         notifyListeners();
-        unawaited(refreshFromServer());
+        if (isExecutionStage) unawaited(refreshFromServer());
         return null;
       } catch (e) {
         return e is ApiException ? e.message : 'تعذّر اعتماد الطلب: $e';
       }
     }
+
     String? bedId;
-    if (req.isAdd) {
-      final free = freeBedsForContractor(req.contractorId);
-      if (free.isEmpty) return 'لا يوجد فراغ متاح للتنفيذ';
-      final bed = free.first;
-      bedId = bed.id;
-      addResident(
-        name: req.workerName,
-        employeeCode: req.employeeCode,
-        jobTitle: req.jobTitle.isEmpty ? 'عامل متعهد' : req.jobTitle,
-        company: req.contractorName,
-        department: 'متعهدون ومقاولون',
-        shift: 'نهاري',
-        rotation: '',
-        bedId: bed.id,
-        contractorId: req.contractorId,
-        cardNumber: req.workerCardNumber,
-        birthDate: req.workerBirthDate,
-        birthPlace: req.workerBirthPlace,
-      );
-    } else {
-      final names = {req.workerName, if (req.employeeCode.isNotEmpty) req.employeeCode};
-      residents.removeWhere((r) =>
-          r.contractorId == req.contractorId &&
-          (names.contains(r.name) || names.contains(r.employeeCode)));
+    String? resolvedEmployeeCode = employeeCode.trim().isEmpty ? req.employeeCode : employeeCode.trim();
+    if (isExecutionStage) {
+      if (req.isAdd) {
+        final free = freeBedsForContractor(req.contractorId);
+        if (free.isEmpty) return 'لا يوجد فراغ متاح للتنفيذ';
+        final bed = free.first;
+        bedId = bed.id;
+        addResident(
+          name: req.workerName,
+          employeeCode: resolvedEmployeeCode,
+          jobTitle: req.jobTitle.isEmpty ? 'عامل متعهد' : req.jobTitle,
+          company: req.contractorName,
+          department: 'متعهدون ومقاولون',
+          shift: 'نهاري',
+          rotation: '',
+          bedId: bed.id,
+          contractorId: req.contractorId,
+          cardNumber: req.workerCardNumber,
+          birthDate: req.workerBirthDate,
+          birthPlace: req.workerBirthPlace,
+        );
+      } else {
+        final names = {req.workerName, if (resolvedEmployeeCode.isNotEmpty) resolvedEmployeeCode};
+        residents.removeWhere((r) =>
+            r.contractorId == req.contractorId &&
+            (names.contains(r.name) || names.contains(r.employeeCode)));
+      }
     }
+
     contractorRequests[index] = req.copyWith(
-      stage: 'done',
+      stage: req.nextStage,
       bedId: bedId,
-      securityApprover: approver.isEmpty ? (currentUser?.name ?? 'مشرف الأمن') : approver,
+      employeeCode: resolvedEmployeeCode.isEmpty ? null : resolvedEmployeeCode,
+      housingApprover: housingApprover,
+      securityApprover: securityApprover,
+      visitorApprover: visitorApprover,
       reviewedAt: DateTime.now(),
       reviewNotes: notes,
     );

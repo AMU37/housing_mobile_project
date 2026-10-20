@@ -226,7 +226,6 @@ class _AddWorkerSheet extends StatefulWidget {
 
 class _AddWorkerSheetState extends State<_AddWorkerSheet> {
   final _name = TextEditingController();
-  final _code = TextEditingController();
   final _job = TextEditingController();
   final _reason = TextEditingController();
   final _card = TextEditingController();
@@ -237,7 +236,6 @@ class _AddWorkerSheetState extends State<_AddWorkerSheet> {
   @override
   void dispose() {
     _name.dispose();
-    _code.dispose();
     _job.dispose();
     _reason.dispose();
     _card.dispose();
@@ -246,6 +244,15 @@ class _AddWorkerSheetState extends State<_AddWorkerSheet> {
   }
 
   String _fmtDate(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  int? get _age {
+    final bd = _birthDate;
+    if (bd == null) return null;
+    final now = DateTime.now();
+    var age = now.year - bd.year;
+    if (now.month < bd.month || (now.month == bd.month && now.day < bd.day)) age--;
+    return age < 0 ? 0 : age;
+  }
 
   Future<void> _pickBirthDate() async {
     final now = DateTime.now();
@@ -264,7 +271,6 @@ class _AddWorkerSheetState extends State<_AddWorkerSheet> {
       contractorId: widget.contractor.id,
       type: 'new_worker',
       workerName: _name.text,
-      employeeCode: _code.text,
       jobTitle: _job.text,
       reason: _reason.text,
       workerCardNumber: _card.text,
@@ -277,7 +283,7 @@ class _AddWorkerSheetState extends State<_AddWorkerSheet> {
       return;
     }
     Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إرسال طلب الإضافة إلى مراقب السكن'), backgroundColor: Color(0xFF16846B)));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إرسال طلب الإضافة إلى مشرف الأمن'), backgroundColor: Color(0xFF16846B)));
   }
 
   @override
@@ -288,7 +294,7 @@ class _AddWorkerSheetState extends State<_AddWorkerSheet> {
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           const Text('طلب إضافة عامل', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: navy)),
           const SizedBox(height: 4),
-          Text('سكن ${widget.contractor.name} • المتاح: ${widget.free} سرير', style: const TextStyle(fontSize: 11, color: muted)),
+          Text('سكن ${widget.contractor.name} • الأسرّة المتاحة: ${widget.free}', style: const TextStyle(fontSize: 11, color: muted)),
           const SizedBox(height: 16),
           TextField(controller: _name, decoration: const InputDecoration(labelText: 'اسم العامل *')),
           const SizedBox(height: 10),
@@ -298,15 +304,28 @@ class _AddWorkerSheetState extends State<_AddWorkerSheet> {
             onTap: _pickBirthDate,
             child: InputDecorator(
               decoration: const InputDecoration(labelText: 'تاريخ الميلاد *', prefixIcon: Icon(Icons.cake_outlined)),
-              child: Text(_birthDate == null ? 'اختر التاريخ' : _fmtDate(_birthDate!), style: TextStyle(fontSize: 14, color: _birthDate == null ? muted : navy)),
+              child: Text(_birthDate == null ? 'اختر التاريخ' : '${_fmtDate(_birthDate!)}${_age == null ? '' : '  (العمر: $_age سنة)'}',
+                  style: TextStyle(fontSize: 14, color: _birthDate == null ? muted : ((_age ?? 0) < 18 ? const Color(0xFFC2414B) : navy))),
             ),
           ),
+          if (_age != null && _age! < 18) ...[
+            const SizedBox(height: 6),
+            const Text('لا يسمح بإضافة موظف أقل من 18 عاماً', style: TextStyle(color: Color(0xFFC2414B), fontSize: 11, fontWeight: FontWeight.w700)),
+          ],
           const SizedBox(height: 10),
           TextField(controller: _birthPlace, decoration: const InputDecoration(labelText: 'مكان الميلاد *', prefixIcon: Icon(Icons.place_outlined))),
           const SizedBox(height: 10),
           TextField(controller: _job, decoration: const InputDecoration(labelText: 'المسمى الوظيفي')),
           const SizedBox(height: 10),
-          TextField(controller: _code, decoration: const InputDecoration(labelText: 'كود الموظف (اختياري)')),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(color: teal.withOpacity(.08), borderRadius: BorderRadius.circular(12)),
+            child: const Row(children: [
+              Icon(Icons.info_outline_rounded, size: 16, color: teal),
+              SizedBox(width: 8),
+              Expanded(child: Text('يُسجَّل كود الموظف لاحقاً من قبل مراقب الزوار قبل الاعتماد النهائي.', style: TextStyle(fontSize: 11, color: navy, fontWeight: FontWeight.w600))),
+            ]),
+          ),
           const SizedBox(height: 10),
           TextField(controller: _reason, maxLines: 2, decoration: const InputDecoration(labelText: 'سبب الإضافة')),
           if (_error != null) ...[

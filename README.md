@@ -57,9 +57,17 @@ flutter build web --release --dart-define=HOUSING_API_BASE_URL=https://housing-s
 | `ctr02` / `ctr04` / `contractor` | متعهدون |
 | `supervisor` | مراقب السكن |
 | `security` | مشرف الأمن |
+| `visitor` | مراقب الزوار |
 | `admin` | مدير النظام |
 
 كلمة المرور لكل الحسابات: `123456`.
+
+## مسار اعتماد الطلبات
+
+- **طلب الإضافة:** مشرف الأمن ← مراقب الزوار (يسجّل كود الموظف إجبارياً) ← مراقب السكن (ينفّذ التسكين).
+- **طلب الاستبعاد:** مراقب السكن ← مشرف الأمن ← مراقب الزوار (ينفّذ الاستبعاد).
+
+قيود الإضافة: يمنع إضافة موظف أقل من 18 عاماً، ويمنع الإضافة عند عدم وجود سرير متاح لدى المتعهد.
 
 ## واجهات الخادم
 
@@ -71,8 +79,11 @@ flutter build web --release --dart-define=HOUSING_API_BASE_URL=https://housing-s
 | `GET /api/contractor-requests` | طلبات المتعهدين |
 | `POST /api/contractor-requests` | إنشاء طلب |
 | `POST /api/contractor-requests/{id}/approve-housing` | اعتماد مراقب السكن |
-| `POST /api/contractor-requests/{id}/approve-security` | اعتماد/تنفيذ مشرف الأمن |
+| `POST /api/contractor-requests/{id}/approve-security` | اعتماد مشرف الأمن |
+| `POST /api/contractor-requests/{id}/approve-visitor` | اعتماد مراقب الزوار (كود الموظف) |
 | `POST /api/contractor-requests/{id}/reject` | رفض الطلب |
+| `POST /api/users` | إنشاء/تعديل مستخدم (مدير النظام فقط) |
+| `DELETE /api/users/{id}` | حذف مستخدم (مدير النظام فقط) |
 
 ## بنية المشروع
 

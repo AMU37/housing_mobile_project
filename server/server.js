@@ -47,6 +47,8 @@ function defaultRoleId(user) {
       return 'r_contractor';
     case 'securitySupervisor':
       return 'r_security';
+    case 'visitorSupervisor':
+      return 'r_visitor';
     default:
       return 'r_housing';
   }
@@ -137,9 +139,17 @@ function validateNewWorker(body) {
   if (!body.workerCardNumber || !String(body.workerCardNumber).trim()) return 'يرجى إدخال رقم البطاقة';
   if (!body.workerBirthDate) return 'يرجى تحديد تاريخ الميلاد';
   if (!body.workerBirthPlace || !String(body.workerBirthPlace).trim()) return 'يرجى إدخال مكان الميلاد';
+  const bd = new Date(body.workerBirthDate);
+  if (isNaN(bd.getTime())) return 'تاريخ الميلاد غير صحيح';
+  const now = new Date();
+  let age = now.getFullYear() - bd.getFullYear();
+  if (now.getMonth() < bd.getMonth() || (now.getMonth() === bd.getMonth() && now.getDate() < bd.getDate())) {
+    age--;
+  }
+  if (age < 18) return 'لا يسمح بإضافة موظف أقل من 18 عاماً';
   if (freeBedCount(body.contractorId) <= 0) {
     const c = contractorById(body.contractorId);
-    return 'لا يوجد فراغ في السكن التابع للمتعهد (' + (c ? c.name : '') + ')';
+    return 'لا يوجد سرير متاح لدى المتعهد (' + (c ? c.name : '') + ')';
   }
   return null;
 }
@@ -251,19 +261,74 @@ const server = http.createServer(async (req, res) => {
 
     // ---- نظرة كاملة عند بدء الجلسة ----
     if (method === 'GET' && (route === '/api/bootstrap' || route === '/bootstrap')) {
-      if (!requireAuth(req, res)) return;
+      const viewer = requireAuth(req, res);
+      if (!viewer) return;
+      // مدير النظام يحتاج كلمات المرور لتحرير المستخدمين، وغيره لا.
+      const isAdmin = rolePermissions(viewer).has('admin.users');
       return sendJson(res, 200, {
         buildings: db.buildings,
         rooms: db.rooms,
         beds: db.beds,
         residents: db.residents,
         requests: db.requests,
-        users: db.users.map(publicUser),
+        users: isAdmin ? db.users : db.users.map(publicUser),
         contractors: db.contractors,
         contractorWorkers: db.contractorWorkers,
         contractorRequests: db.contractorRequests,
         roles: db.roles,
       });
+    }
+
+    // ---- إدارة المستخدمين (مدير النظام فقط) ----
+    if (route === '/api/users' || route === '/users') {
+      if (method === 'POST') {
+        const user = requirePermission(req, res, 'admin.users');
+        if (!user) return;
+        const body = await readBody(req);
+        const username = String(body.username || '').trim();
+        const name = String(body.name || '').trim();
+        const password = String(body.password || '');
+        if (!name) return sendError(res, 400, 'يرجى إدخال الاسم');
+        if (!username) return sendError(res, 400, 'يرجى إدخال اسم المستخدم');
+        const id = body.id ? String(body.id) : 'u' + Date.now() + Math.floor(Math.random() * 1000);
+        const taken = db.users.some(
+          (u) => u.id !== id && u.username.toLowerCase() === username.toLowerCase()
+        );
+        if (taken) return sendError(res, 409, 'اسم المستخدم مستخدم مسبقاً');
+        const existing = db.users.find((u) => u.id === id);
+        if (!existing && !password) return sendError(res, 400, 'يرجى إدخال كلمة المرور');
+        const record = {
+          id,
+          name,
+          username,
+          password: password || (existing ? existing.password : ''),
+          role: String(body.role || (existing ? existing.role : 'housingSupervisor')),
+          roleId: body.roleId != null ? String(body.roleId) : (existing ? existing.roleId : null),
+          phone: String(body.phone || '').trim(),
+          contractorId: body.contractorId != null ? body.contractorId : (existing ? existing.contractorId : null),
+          contractorName: String(body.contractorName || '').trim(),
+          companyName: String(body.companyName || (existing ? existing.companyName : '') || '').trim(),
+        };
+        if (existing) {
+          db.users[db.users.indexOf(existing)] = record;
+        } else {
+          db.users.unshift(record);
+        }
+        await saveDb();
+        return sendJson(res, 200, { user: record, created: !existing });
+      }
+    }
+
+    const userMatch = route.match(/^\/api\/users\/([^/]+)$/) || route.match(/^\/users\/([^/]+)$/);
+    if (method === 'DELETE' && userMatch) {
+      const user = requirePermission(req, res, 'admin.users');
+      if (!user) return;
+      const id = decodeURIComponent(userMatch[1]);
+      const before = db.users.length;
+      db.users = db.users.filter((u) => u.id !== id);
+      if (db.users.length === before) return sendError(res, 404, 'المستخدم غير موجود');
+      await saveDb();
+      return sendJson(res, 200, { ok: true });
     }
 
     // ---- قوائم/إنشاء طلبات المتعهدين ----
@@ -282,11 +347,12 @@ const server = http.createServer(async (req, res) => {
             : validateNewWorker(body);
         if (err) return sendError(res, 400, err);
         const contractor = contractorById(body.contractorId);
+        const requestType = body.requestType || 'new_worker';
         const record = {
           id: 'CR-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
           contractorId: body.contractorId,
           contractorName: contractor.name,
-          requestType: body.requestType || 'new_worker',
+          requestType: requestType,
           workerName: String(body.workerName || '').trim(),
           employeeCode: String(body.employeeCode || '').trim(),
           jobTitle: String(body.jobTitle || '').trim(),
@@ -296,10 +362,12 @@ const server = http.createServer(async (req, res) => {
           buildingId: null,
           bedId: null,
           reason: String(body.reason || '').trim(),
-          stage: 'housing',
+          // الإضافة تبدأ من مشرف الأمن، والاستبعاد يبدأ من مراقب السكن.
+          stage: requestType === 'remove_worker' ? 'housing' : 'security',
           createdAt: new Date().toISOString(),
           housingApprover: '',
           securityApprover: '',
+          visitorApprover: '',
           reviewedAt: null,
           reviewNotes: '',
           submittedBy: user.username,
@@ -321,41 +389,76 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const notes = String(body.notes || '').trim();
 
-      if (action === 'approve-housing') {
-        const user = requirePermission(req, res, 'requests.supervise');
+      if (action === 'approve-housing' || action === 'approve-security' || action === 'approve-visitor') {
+        const stageName = action.replace('approve-', '');
+        const permByStage = {
+          housing: 'requests.supervise',
+          security: 'requests.security',
+          visitor: 'requests.visitor',
+        };
+        const stageLabelByStage = {
+          housing: 'مراقب السكن',
+          security: 'مشرف الأمن',
+          visitor: 'مراقب الزوار',
+        };
+        const user = requirePermission(req, res, permByStage[stageName]);
         if (!user) return;
-        if (req0.stage !== 'housing') return sendError(res, 409, 'الطلب ليس بانتظار مراقب السكن');
-        if (req0.requestType === 'new_worker' && freeBedCount(req0.contractorId) <= 0) {
-          return sendError(res, 409, 'لا يوجد فراغ في السكن التابع للمتعهد');
+        if (req0.stage !== stageName) {
+          return sendError(res, 409, 'الطلب ليس بانتظار ' + stageLabelByStage[stageName]);
         }
-        req0.stage = 'security';
-        req0.housingApprover = user.name;
-        req0.reviewedAt = new Date().toISOString();
-        req0.reviewNotes = notes;
-        await saveDb();
-        return sendJson(res, 200, req0);
-      }
 
-      if (action === 'approve-security') {
-        const user = requirePermission(req, res, 'requests.security');
-        if (!user) return;
-        if (req0.stage !== 'security') return sendError(res, 409, 'الطلب ليس بانتظار مشرف الأمن');
-        if (req0.requestType === 'new_worker') {
-          const result = createResident(req0);
-          if (result.error) return sendError(res, 409, result.error);
-          db.residents.unshift(result.resident);
-          req0.bedId = result.bedId;
-        } else {
-          const names = new Set([req0.workerName]);
-          if (req0.employeeCode) names.add(req0.employeeCode);
-          db.residents = db.residents.filter(
-            (r) =>
-              !(r.contractorId === req0.contractorId &&
-                (names.has(r.name) || names.has(r.employeeCode)))
-          );
+        // مرحلة التنفيذ: آخر مرحلة في كل مسار.
+        const isAdd = req0.requestType !== 'remove_worker';
+        const isExecutionStage = isAdd ? stageName === 'housing' : stageName === 'visitor';
+
+        if (stageName === 'visitor' && isAdd) {
+          const code = String(body.employeeCode || '').trim();
+          if (!code) return sendError(res, 400, 'يرجى إدخال كود الموظف قبل الاعتماد');
+          req0.employeeCode = code;
+          if (req0.workerBirthDate) {
+            const bd = new Date(req0.workerBirthDate);
+            if (!isNaN(bd.getTime())) {
+              const now = new Date();
+              let age = now.getFullYear() - bd.getFullYear();
+              if (now.getMonth() < bd.getMonth() ||
+                  (now.getMonth() === bd.getMonth() && now.getDate() < bd.getDate())) {
+                age--;
+              }
+              if (age < 18) return sendError(res, 409, 'لا يسمح بإضافة موظف أقل من 18 عاماً');
+            }
+          }
         }
-        req0.stage = 'done';
-        req0.securityApprover = user.name;
+
+        if (isExecutionStage) {
+          if (isAdd) {
+            if (freeBedCount(req0.contractorId) <= 0) {
+              return sendError(res, 409, 'لا يوجد فراغ في السكن التابع للمتعهد');
+            }
+            const result = createResident(req0);
+            if (result.error) return sendError(res, 409, result.error);
+            db.residents.unshift(result.resident);
+            req0.bedId = result.bedId;
+          } else {
+            const names = new Set([req0.workerName]);
+            if (req0.employeeCode) names.add(req0.employeeCode);
+            db.residents = db.residents.filter(
+              (r) =>
+                !(r.contractorId === req0.contractorId &&
+                  (names.has(r.name) || names.has(r.employeeCode)))
+            );
+          }
+        }
+
+        if (stageName === 'housing') {
+          req0.housingApprover = user.name;
+          req0.stage = isAdd ? 'done' : 'security';
+        } else if (stageName === 'security') {
+          req0.securityApprover = user.name;
+          req0.stage = 'visitor';
+        } else {
+          req0.visitorApprover = user.name;
+          req0.stage = isAdd ? 'housing' : 'done';
+        }
         req0.reviewedAt = new Date().toISOString();
         req0.reviewNotes = notes;
         await saveDb();
@@ -366,13 +469,20 @@ const server = http.createServer(async (req, res) => {
         const user = requireAuth(req, res);
         if (!user) return;
         const perms = rolePermissions(user);
-        if (!perms.has('requests.supervise') && !perms.has('requests.security')) {
+        if (!perms.has('requests.supervise') &&
+            !perms.has('requests.security') &&
+            !perms.has('requests.visitor')) {
           return sendError(res, 403, 'لا تملك صلاحية هذا الإجراء');
         }
         if (req0.stage === 'done' || req0.stage === 'rejected') {
           return sendError(res, 409, 'الطلب مغلق مسبقاً');
         }
-        const defaultNote = req0.stage === 'housing' ? 'مرفوض من مراقب السكن' : 'مرفوض من مشرف الأمن';
+        const noteByStage = {
+          housing: 'مرفوض من مراقب السكن',
+          security: 'مرفوض من مشرف الأمن',
+          visitor: 'مرفوض من مراقب الزوار',
+        };
+        const defaultNote = noteByStage[req0.stage] || 'مرفوض';
         req0.stage = 'rejected';
         req0.reviewedAt = new Date().toISOString();
         req0.reviewNotes = notes || defaultNote;

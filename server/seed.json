@@ -49886,6 +49886,18 @@
       "companyName": ""
     },
     {
+      "id": "demo-visitor-00000000000000000001",
+      "name": "مراقب الزوار",
+      "username": "visitor",
+      "password": "123456",
+      "role": "visitorSupervisor",
+      "roleId": null,
+      "phone": "",
+      "contractorId": null,
+      "contractorName": "",
+      "companyName": ""
+    },
+    {
       "id": "demo-admin-0000000000000000000001",
       "name": "مدير النظام",
       "username": "admin",
@@ -50538,6 +50550,7 @@
       "createdAt": "2026-06-06T00:00:00.000",
       "housingApprover": "",
       "securityApprover": "",
+      "visitorApprover": "",
       "reviewedAt": null,
       "reviewNotes": ""
     },
@@ -50559,6 +50572,7 @@
       "createdAt": "2026-06-06T00:00:00.000",
       "housingApprover": "",
       "securityApprover": "",
+      "visitorApprover": "",
       "reviewedAt": null,
       "reviewNotes": ""
     },
@@ -50580,6 +50594,7 @@
       "createdAt": "2026-06-06T00:00:00.000",
       "housingApprover": "",
       "securityApprover": "",
+      "visitorApprover": "",
       "reviewedAt": null,
       "reviewNotes": ""
     },
@@ -50601,6 +50616,7 @@
       "createdAt": "2026-06-06T00:00:00.000",
       "housingApprover": "",
       "securityApprover": "",
+      "visitorApprover": "",
       "reviewedAt": null,
       "reviewNotes": ""
     },
@@ -50622,6 +50638,7 @@
       "createdAt": "2026-06-06T00:00:00.000",
       "housingApprover": "",
       "securityApprover": "",
+      "visitorApprover": "",
       "reviewedAt": null,
       "reviewNotes": ""
     },
@@ -50643,6 +50660,7 @@
       "createdAt": "2026-06-06T00:00:00.000",
       "housingApprover": "",
       "securityApprover": "",
+      "visitorApprover": "",
       "reviewedAt": null,
       "reviewNotes": ""
     },
@@ -50664,6 +50682,7 @@
       "createdAt": "2026-10-12T00:00:00.000",
       "housingApprover": "",
       "securityApprover": "",
+      "visitorApprover": "",
       "reviewedAt": null,
       "reviewNotes": ""
     },
@@ -50685,6 +50704,7 @@
       "createdAt": "2026-10-13T00:00:00.000",
       "housingApprover": "",
       "securityApprover": "",
+      "visitorApprover": "",
       "reviewedAt": null,
       "reviewNotes": ""
     }
@@ -50709,11 +50729,21 @@
     {
       "id": "r_security",
       "name": "مشرف الأمن",
-      "description": "يعتمد الطلبات أمنياً وينفّذها",
+      "description": "يعتمد الطلبات أمنياً (المرحلة الأمنية)",
       "isSystem": true,
       "permissionIds": [
         "operations.view",
         "requests.security"
+      ]
+    },
+    {
+      "id": "r_visitor",
+      "name": "مراقب الزوار",
+      "description": "يدقّق بيانات العامل (كود الموظف والعمر) ويعتمد الطلبات",
+      "isSystem": true,
+      "permissionIds": [
+        "operations.view",
+        "requests.visitor"
       ]
     },
     {
@@ -50740,6 +50770,7 @@
         "housing.manage",
         "requests.supervise",
         "requests.security",
+        "requests.visitor",
         "admin.users"
       ]
     }

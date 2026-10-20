@@ -74,9 +74,13 @@ class _MainShellState extends State<MainShell> {
     final pages = tabs.map((t) => _pageFor(t.key)).toList();
     final canSupervise = widget.store.can('requests.supervise');
     final canSecurity = widget.store.can('requests.security');
-    final pending = canSecurity && !canSupervise
-        ? widget.store.securityPendingRequests.length
-        : widget.store.housingPendingRequests.length;
+    final canVisitor = widget.store.can('requests.visitor');
+    final pending = widget.store.pendingContractorRequests
+        .where((r) =>
+            (canSupervise && r.awaitingHousing) ||
+            (canSecurity && r.awaitingSecurity) ||
+            (canVisitor && r.awaitingVisitor))
+        .length;
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 18,
@@ -89,7 +93,7 @@ class _MainShellState extends State<MainShell> {
           ])),
         ]),
         actions: [
-          if (canSupervise || canSecurity) _approvalsButton(context, pending),
+          if (canSupervise || canSecurity || canVisitor) _approvalsButton(context, pending),
           IconButton(
             tooltip: widget.store.isSyncing
                 ? 'جارٍ المزامنة...'

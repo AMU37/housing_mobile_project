@@ -87,17 +87,29 @@ class HousingApi {
     return ContractorRequest.fromJson((data as Map).cast<String, dynamic>());
   }
 
-  Future<ContractorRequest> approveHousing(String requestId, {String notes = ''}) =>
-      _request('POST', '/contractor-requests/$requestId/approve-housing', body: {'notes': notes})
-          .then((d) => ContractorRequest.fromJson((d as Map).cast<String, dynamic>()));
-
-  Future<ContractorRequest> approveSecurity(String requestId, {String notes = ''}) =>
-      _request('POST', '/contractor-requests/$requestId/approve-security', body: {'notes': notes})
+  /// اعتماد المرحلة الحالية للطلب (housing / security / visitor).
+  Future<ContractorRequest> approveStage({
+    required String requestId,
+    required String stage,
+    String notes = '',
+    String employeeCode = '',
+  }) =>
+      _request('POST', '/contractor-requests/$requestId/approve-$stage',
+              body: {'notes': notes, 'employeeCode': employeeCode})
           .then((d) => ContractorRequest.fromJson((d as Map).cast<String, dynamic>()));
 
   Future<ContractorRequest> rejectRequest(String requestId, {String notes = ''}) =>
       _request('POST', '/contractor-requests/$requestId/reject', body: {'notes': notes})
           .then((d) => ContractorRequest.fromJson((d as Map).cast<String, dynamic>()));
+
+  /// إنشاء/تعديل مستخدم (مدير النظام فقط). يعيد المستخدم المحفوظ.
+  Future<AppUser> saveUser(Map<String, dynamic> body) =>
+      _request('POST', '/users', body: body)
+          .then((d) => AppUser.fromJson(((d as Map)['user'] as Map).cast<String, dynamic>()));
+
+  Future<void> deleteUser(String id) async {
+    await _request('DELETE', '/users/$id');
+  }
 
   Future<dynamic> _request(String method, String path, {Map<String, dynamic>? body}) async {
     final uri = Uri.parse('$baseUrl${path.startsWith('/') ? path : '/$path'}');
@@ -115,6 +127,9 @@ class HousingApi {
           break;
         case 'PATCH':
           response = await http.patch(uri, headers: headers, body: encoded).timeout(AppConfig.apiTimeout);
+          break;
+        case 'DELETE':
+          response = await http.delete(uri, headers: headers, body: encoded).timeout(AppConfig.apiTimeout);
           break;
         default:
           response = await http.get(uri, headers: headers).timeout(AppConfig.apiTimeout);

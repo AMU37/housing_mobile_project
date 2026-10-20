@@ -14,23 +14,27 @@ class ContractorApprovalsScreen extends StatelessWidget {
       builder: (context, _) {
         final canHousing = store.can('requests.supervise');
         final canSecurity = store.can('requests.security');
-        final List<ContractorRequest> pending;
-        if (canHousing && canSecurity) {
-          pending = store.pendingContractorRequests;
-        } else if (canSecurity) {
-          pending = store.securityPendingRequests;
-        } else {
-          pending = store.housingPendingRequests;
-        }
+        final canVisitor = store.can('requests.visitor');
+        final permissions = <String>{
+          if (canHousing) 'housing',
+          if (canSecurity) 'security',
+          if (canVisitor) 'visitor',
+        };
+        final pending = store.pendingContractorRequests
+            .where((r) => permissions.contains(r.stage))
+            .toList();
         final history = store.contractorRequests.where((r) => !r.isPending).toList()
           ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-        final title = canHousing && canSecurity
+        final stageNames = <String>[
+          if (canHousing) 'السكن',
+          if (canSecurity) 'الأمن',
+          if (canVisitor) 'الزوار',
+        ];
+        final title = stageNames.isEmpty
             ? 'طلبات المتعهدين'
-            : (canSecurity ? 'طلبات المتعهدين — الأمن' : 'طلبات المتعهدين — السكن');
-        final hint = canHousing && canSecurity
-            ? 'اعتماد المرحلتين'
-            : (canSecurity ? 'الموافقة الأمنية' : 'الموافقة الأولية');
+            : 'طلبات المتعهدين — ${stageNames.join(' / ')}';
+        final hint = 'الموافقة';
 
         return DefaultTabController(
           length: 2,
@@ -93,7 +97,6 @@ class ContractorApprovalsScreen extends StatelessWidget {
   }
 
   Widget _card(BuildContext context, ContractorRequest r, {required bool showActions}) {
-    final stageSecurity = r.awaitingSecurity;
     final color = r.isRejected ? const Color(0xFFC2414B) : (r.isDone ? const Color(0xFF16846B) : const Color(0xFF9A6700));
     final contractor = store.contractorById(r.contractorId);
     final free = store.freeBedCountForContractor(r.contractorId);
@@ -117,18 +120,20 @@ class ContractorApprovalsScreen extends StatelessWidget {
           _row('العامل', r.workerName.isEmpty ? 'بدون اسم' : r.workerName),
           if (r.workerCardNumber.isNotEmpty) _row('رقم البطاقة', r.workerCardNumber),
           if (r.workerBirthDate != null) _row('تاريخ الميلاد', r.workerBirthDateLabel),
+          if (r.workerAge != null) _row('العمر', '${r.workerAge} سنة', valueColor: (r.workerAge ?? 0) < 18 ? const Color(0xFFC2414B) : const Color(0xFF16846B)),
           if (r.workerBirthPlace.isNotEmpty) _row('مكان الميلاد', r.workerBirthPlace),
           if (r.employeeCode.isNotEmpty) _row('كود الموظف', r.employeeCode),
           if (r.jobTitle.isNotEmpty) _row('المسمى', r.jobTitle),
           if (buildingNames.isNotEmpty) _row('السكن', buildingNames),
-          if (r.isAdd) _row('الفراغ المتاح', '$free سرير', valueColor: canApprove ? const Color(0xFF16846B) : const Color(0xFFC2414B)),
+          if (r.isAdd) _row('الأسرّة المتاحة', '$free سرير', valueColor: canApprove ? const Color(0xFF16846B) : const Color(0xFFC2414B)),
           if (r.reason.isNotEmpty) _row('السبب', r.reason),
           if (r.housingApprover.isNotEmpty) _row('مراقب السكن', r.housingApprover),
           if (r.securityApprover.isNotEmpty) _row('مشرف الأمن', r.securityApprover),
+          if (r.visitorApprover.isNotEmpty) _row('مراقب الزوار', r.visitorApprover),
           if (r.reviewNotes.isNotEmpty) _row('ملاحظة', r.reviewNotes),
           if (showActions && r.isPending) ...[
             const SizedBox(height: 12),
-            if (stageSecurity && r.isAdd && !canApprove) ...[
+            if (r.isAdd && !canApprove && (r.awaitingVisitor || r.awaitingHousing)) ...[
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                 margin: const EdgeInsets.only(bottom: 10),
@@ -136,36 +141,23 @@ class ContractorApprovalsScreen extends StatelessWidget {
                 child: const Row(children: [
                   Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFC2414B)),
                   SizedBox(width: 8),
-                  Expanded(child: Text('لا يوجد فراغ في سكن المتعهد — لا يمكن تنفيذ الإضافة.', style: TextStyle(fontSize: 11, color: Color(0xFFC2414B), fontWeight: FontWeight.w700))),
+                  Expanded(child: Text('لا يوجد سرير متاح لدى المتعهد — لا يمكن تنفيذ الإضافة.', style: TextStyle(fontSize: 11, color: Color(0xFFC2414B), fontWeight: FontWeight.w700))),
                 ]),
               ),
             ],
             Row(children: [
               Expanded(child: PrimaryAction(
-                label: stageSecurity ? 'موافقة أمنية وتنفيذ' : 'موافقة وإحالة للأمن',
-                icon: stageSecurity ? Icons.verified_user_rounded : Icons.forward_to_inbox_rounded,
+                label: _actionLabel(r),
+                icon: _actionIcon(r),
                 compact: true,
-                onPressed: () async {
-                  final messenger = ScaffoldMessenger.of(context);
-                  final err = stageSecurity
-                      ? await store.approveSecurityStage(r.id)
-                      : await store.approveHousingStage(r.id);
-                  if (err != null) {
-                    messenger.showSnackBar(SnackBar(content: Text(err), backgroundColor: const Color(0xFFC2414B)));
-                  } else {
-                    messenger.showSnackBar(SnackBar(
-                      content: Text(stageSecurity ? 'تم اعتماد الطلب أمنياً وتنفيذه' : 'تمت الموافقة وإحالة الطلب لمشرف الأمن'),
-                      backgroundColor: const Color(0xFF16846B),
-                    ));
-                  }
-                },
+                onPressed: () => _approve(context, r),
               )),
               const SizedBox(width: 10),
               Expanded(child: OutlinedButton.icon(
                 onPressed: () async {
                   final messenger = ScaffoldMessenger.of(context);
                   final err = await store.rejectContractorRequest(r.id,
-                      reviewNotes: stageSecurity ? 'مرفوض من مشرف الأمن' : 'مرفوض من مراقب السكن');
+                      reviewNotes: 'مرفوض من ${_stageActorName(r.stage)}');
                   if (err != null) {
                     messenger.showSnackBar(SnackBar(content: Text(err), backgroundColor: const Color(0xFFC2414B)));
                   } else {
@@ -181,6 +173,118 @@ class ContractorApprovalsScreen extends StatelessWidget {
         ]),
       ),
     );
+  }
+
+  String _stageActorName(String stage) {
+    switch (stage) {
+      case 'housing':
+        return 'مراقب السكن';
+      case 'security':
+        return 'مشرف الأمن';
+      case 'visitor':
+        return 'مراقب الزوار';
+      default:
+        return 'المراجع';
+    }
+  }
+
+  bool _isExecutionStage(ContractorRequest r) =>
+      r.isAdd ? r.awaitingHousing : r.awaitingVisitor;
+
+  String _actionLabel(ContractorRequest r) {
+    if (_isExecutionStage(r)) {
+      return r.isAdd ? 'موافقة نهائية وتنفيذ التسكين' : 'موافقة نهائية وتنفيذ الاستبعاد';
+    }
+    switch (r.stage) {
+      case 'security':
+        return 'موافقة أمنية وإحالة للزوار';
+      case 'visitor':
+        return 'تسجيل كود الموظف وإحالة للسكن';
+      case 'housing':
+        return 'موافقة وإحالة للأمن';
+      default:
+        return 'موافقة';
+    }
+  }
+
+  IconData _actionIcon(ContractorRequest r) {
+    if (_isExecutionStage(r)) return Icons.verified_user_rounded;
+    switch (r.stage) {
+      case 'security':
+        return Icons.security_rounded;
+      case 'visitor':
+        return Icons.badge_rounded;
+      default:
+        return Icons.forward_to_inbox_rounded;
+    }
+  }
+
+  Future<void> _approve(BuildContext context, ContractorRequest r) async {
+    final messenger = ScaffoldMessenger.of(context);
+    String employeeCode = '';
+    // مراقب الزوار في طلب الإضافة يدخل كود الموظف إجبارياً.
+    if (r.awaitingVisitor && r.isAdd) {
+      final code = await _promptEmployeeCode(context, r);
+      if (code == null) return;
+      employeeCode = code;
+    }
+    String? err;
+    if (r.awaitingSecurity) {
+      err = await store.approveSecurityStage(r.id);
+    } else if (r.awaitingVisitor) {
+      err = await store.approveVisitorStage(r.id, employeeCode: employeeCode);
+    } else {
+      err = await store.approveHousingStage(r.id);
+    }
+    if (err != null) {
+      messenger.showSnackBar(SnackBar(content: Text(err), backgroundColor: const Color(0xFFC2414B)));
+    } else {
+      messenger.showSnackBar(SnackBar(
+        content: Text(_isExecutionStage(r) ? 'تم اعتماد الطلب وتنفيذه' : 'تمت الموافقة وإحالة الطلب للمرحلة التالية'),
+        backgroundColor: const Color(0xFF16846B),
+      ));
+    }
+  }
+
+  Future<String?> _promptEmployeeCode(BuildContext context, ContractorRequest r) async {
+    final controller = TextEditingController(text: r.employeeCode);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('كود الموظف', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('العامل: ${r.workerName}', style: const TextStyle(fontSize: 12, color: muted)),
+            if (r.workerAge != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('العمر: ${r.workerAge} سنة', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
+                    color: (r.workerAge ?? 0) < 18 ? const Color(0xFFC2414B) : const Color(0xFF16846B))),
+              ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'كود الموظف (إجباري)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          FilledButton(
+            onPressed: () {
+              final code = controller.text.trim();
+              if (code.isEmpty) return;
+              Navigator.pop(ctx, code);
+            },
+            child: const Text('اعتماد'),
+          ),
+        ],
+      ),
+    );
+    return result;
   }
 
   Widget _row(String label, String value, {Color? valueColor}) => Padding(

@@ -17,6 +17,46 @@ const SEED_FILE = path.join(__dirname, 'seed.json');
 const DATABASE_URL = (process.env.DATABASE_URL || '').trim();
 const STATE_KEY = 'housing_state_v1';
 
+// تعريف الأدوار النظامية الأساسية — يُستخدم لترقية حالات مخزّنة قديمة
+// (إضافة دور أو صلاحية جديدة) دون المساس بالبيانات الموجودة.
+const SYSTEM_ROLES = [
+  {
+    id: 'r_visitor',
+    name: 'مراقب الزوار',
+    description: 'يدقّق بيانات العامل (كود الموظف والعمر) ويعتمد الطلبات',
+    isSystem: true,
+    permissionIds: ['operations.view', 'requests.visitor'],
+  },
+];
+
+// صلاحيات جديدة تُضاف للأدوار القائمة إن لم تكن موجودة.
+const ROLE_PERMISSION_ADDITIONS = {
+  r_admin: ['requests.visitor'],
+};
+
+function ensureRoles(data) {
+  if (!Array.isArray(data.roles)) data.roles = [];
+  let changed = false;
+  for (const role of SYSTEM_ROLES) {
+    if (!data.roles.some((r) => r.id === role.id)) {
+      data.roles.push(JSON.parse(JSON.stringify(role)));
+      changed = true;
+    }
+  }
+  for (const [roleId, perms] of Object.entries(ROLE_PERMISSION_ADDITIONS)) {
+    const role = data.roles.find((r) => r.id === roleId);
+    if (!role) continue;
+    if (!Array.isArray(role.permissionIds)) role.permissionIds = [];
+    for (const p of perms) {
+      if (!role.permissionIds.includes(p)) {
+        role.permissionIds.push(p);
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
 function loadSeed() {
   if (!fs.existsSync(SEED_FILE)) {
     throw new Error('لم يُعثر على seed.json — شغّل أولاً: dart run tool/export_seed.dart');
@@ -44,12 +84,15 @@ function loadSeed() {
 function fileLoad() {
   if (fs.existsSync(DATA_FILE)) {
     try {
-      return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+      const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+      if (ensureRoles(data)) fileWrite(data);
+      return data;
     } catch (e) {
       console.error('تعذّر قراءة data.json، سيتم إنشاء نسخة جديدة:', e.message);
     }
   }
   const fresh = loadSeed();
+  ensureRoles(fresh);
   fileWrite(fresh);
   return fresh;
 }
@@ -87,8 +130,13 @@ async function pgInit() {
 async function pgLoad() {
   const p = getPool();
   const { rows } = await p.query('SELECT value FROM kv_store WHERE key = $1', [STATE_KEY]);
-  if (rows.length) return rows[0].value;
+  if (rows.length) {
+    const data = rows[0].value;
+    if (ensureRoles(data)) await pgWrite(data);
+    return data;
+  }
   const fresh = loadSeed();
+  ensureRoles(fresh);
   await pgWrite(fresh);
   return fresh;
 }
