@@ -1,0 +1,21 @@
+# نشر خادم إدارة السكن على Render (خدمة ويب عامة بـ HTTPS).
+# قاعدة البيانات: Supabase PostgreSQL عبر متغير DATABASE_URL.
+# - إن وُجد DATABASE_URL → تخزين دائم في Postgres (الموصى به للإنتاج).
+# - إن لم يوجد → تخزين في ملف data.json (للتطوير المحلي فقط، غير دائم على Render).
+services:
+  - type: web
+    name: housing-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # الصقه من: Supabase Dashboard -> Connect -> Session pooler
+      # مثال: postgresql://postgres.<ref>:<password>@<pooler-host>:5432/postgres?sslmode=require
+      - key: DATABASE_URL
+        sync: false

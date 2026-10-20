@@ -1,0 +1,23 @@
+.dart_tool/
+.packages
+.pub-cache/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+.idea/
+.vscode/
+android/local.properties
+
+# server
+server/node_modules/
+server/data.json
+server/data.json.tmp
+server/package-lock.json
+*.log
+
+# مخرجات البناء المرفوعة يدوياً (لا تُرفع للمستودع)
+housing-mobile-app-release.apk
+*.apk
+
+
