@@ -4,6 +4,8 @@ services:
     name: housing-management-api
     runtime: python
     plan: free
+    # نفس منطقة قاعدة البيانات (Supabase ap-southeast-1) لتقليل زمن الإقلاع والاستجابة
+    region: singapore
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
@@ -35,6 +37,7 @@ services:
     name: housing-management-web
     runtime: node
     plan: free
+    region: singapore
     rootDir: frontend
     buildCommand: npm install && npm run build
     startCommand: node scripts/serve-static.mjs
