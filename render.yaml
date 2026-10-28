@@ -47,7 +47,7 @@ services:
         value: 24.21.0
       - key: NEXT_TELEMETRY_DISABLED
         value: "1"
-      # ضع هنا رابط خدمة الـ API (مثال: https://housing-management-api.onrender.com)
-      # ثم أعد النشر لأن القيمة تُدمج في ملفات الواجهة وقت البناء.
+      # رابط خدمة الـ API — يُدمج في ملفات الواجهة وقت البناء.
+      # بعد تغييره أعد نشر خدمة الويب (Clear build cache & deploy).
       - key: NEXT_PUBLIC_API_URL
-        sync: false
+        value: https://housing-management-api.onrender.com
