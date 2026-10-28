@@ -1,0 +1,52 @@
+# نظام إدارة السكن — ملفات مستثناة من Git
+
+# Node / Next.js
+node_modules/
+.next/
+dist/
+out/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# متغيرات البيئة والأسرار
+.env
+.env.*
+!.env.example
+
+# بيانات التشغيل المحلية (تُنشأ من seed.json)
+backend/data.json
+backend/data.json.tmp
+backend/test_data.json
+
+# مخرجات أندرويد
+frontend/android/app/build/
+frontend/android/build/
+frontend/android/.gradle/
+frontend/android/local.properties
+frontend/android/app/src/main/assets/public/
+frontend/android/app/src/main/assets/capacitor.config.json
+frontend/android/app/src/main/assets/capacitor.plugins.json
+frontend/android/app/src/main/res/xml/config.xml
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# نظام التشغيل والمحرر
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# النسخ الاحتياطية تحتوي بيانات إنتاج حقيقية - لا تُرفع للمستودع
+.backups/
+*.bak
+
+# ملف البذرة يحتوي بيانات إنتاج حقيقية - لا يُرفع
+backend/seed.json

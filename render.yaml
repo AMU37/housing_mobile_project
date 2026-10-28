@@ -1,0 +1,53 @@
+services:
+  # خدمة الواجهة الخلفية (FastAPI) — تقرأ وتكتب مستند الحالة في Supabase kv_store
+  - type: web
+    name: housing-management-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.13
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      # لا تغيّر هذا المفتاح: بيانات الإنتاج الحالية محفوظة تحته في kv_store
+      - key: STATE_KEY
+        value: housing_state_v1
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: FORCE_PASSWORD_CHANGE
+        value: "false"
+      - key: MAX_UPLOAD_MB
+        value: "25"
+      - key: AUDIT_LIMIT
+        value: "8000"
+
+  # واجهة الويب (Next.js static export) — تُبنى مرة واحدة وتُقدَّم كملفات ثابتة
+  - type: web
+    name: housing-management-web
+    runtime: node
+    plan: free
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: node scripts/serve-static.mjs
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 24.21.0
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      # ضع هنا رابط خدمة الـ API (مثال: https://housing-management-api.onrender.com)
+      # ثم أعد النشر لأن القيمة تُدمج في ملفات الواجهة وقت البناء.
+      - key: NEXT_PUBLIC_API_URL
+        sync: false

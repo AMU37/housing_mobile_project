@@ -1,0 +1,238 @@
+"use client";
+
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  apiLogin,
+  clearSession,
+  getBootstrap,
+  getStoredUser,
+  logoutLocal,
+  readAllNotifications,
+  readNotification,
+  storeSession,
+} from "./api";
+import {
+  clearCachedSnapshot,
+  clearLocalSession,
+  getCachedSnapshot,
+  isOnline,
+  loadLocalSession,
+  saveCachedSnapshot,
+  storeLocalSession,
+  type CachedSnapshot,
+} from "./offlineStore";
+import type { Bootstrap, Notification, User } from "./types";
+
+type AppContextValue = {
+  user: User | null;
+  data: Bootstrap | null;
+  notifications: Notification[];
+  unread: number;
+  loading: boolean;
+  offline: boolean;
+  error: string;
+  online: boolean;
+  /** آخر وقت تحديث للبيانات */
+  syncedAt: string | null;
+  refresh: (silent?: boolean) => Promise<boolean | void>;
+  reload: () => Promise<void>;
+  login: (username: string, password: string) => Promise<User>;
+  logout: () => void;
+  readAll: () => Promise<void>;
+  markRead: (id: string) => Promise<void>;
+  setUser: (user: User | null) => void;
+};
+
+const AppContext = createContext<AppContextValue | null>(null);
+
+function redirectToLogin() {
+  if (typeof window === "undefined") return;
+  if (!window.location.pathname.endsWith("/index.html") && window.location.pathname === "/") return;
+  window.location.assign("/");
+}
+
+export function AppProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const [user, setUserState] = useState<User | null>(null);
+  const [data, setData] = useState<Bootstrap | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [offline, setOffline] = useState(false);
+  const [error, setError] = useState("");
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
+  const [online, setOnline] = useState(true);
+  const inflight = useRef(false);
+  const mounted = useRef(true);
+
+  const applyBootstrap = useCallback((payload: Bootstrap, isOffline: boolean) => {
+    setData(payload);
+    const nextUser = payload.user || null;
+    setUserState(nextUser);
+    if (nextUser) {
+      storeLocalSession({
+        id: nextUser.id,
+        name: nextUser.name,
+        username: nextUser.username,
+        role: nextUser.role,
+        roleId: nextUser.roleId,
+        roleName: nextUser.roleName,
+        contractorId: nextUser.contractorId,
+        permissions: nextUser.permissions,
+      });
+    }
+    setOffline(isOffline);
+    setSyncedAt(new Date().toISOString());
+  }, []);
+
+  const refresh = useCallback(
+    async (silent = false) => {
+      if (inflight.current) return;
+      const token = typeof window !== "undefined" ? window.localStorage.getItem("access_token") : null;
+      if (!token) {
+        const cached = getCachedSnapshot();
+        const session = loadLocalSession();
+        if (cached?.bootstrap && session) {
+          applyBootstrap(cached.bootstrap, true);
+          setLoading(false);
+          return true;
+        }
+        setLoading(false);
+        redirectToLogin();
+        return false;
+      }
+      inflight.current = true;
+      if (!silent) setLoading(true);
+      try {
+        const payload = await getBootstrap();
+        if (!mounted.current) return false;
+        applyBootstrap(payload, false);
+        saveCachedSnapshot(payload, payload.meta?.counts);
+        setError("");
+        return true;
+      } catch (err) {
+        if (!mounted.current) return false;
+        const cached = getCachedSnapshot();
+        const session = loadLocalSession();
+        if (cached?.bootstrap && session) {
+          applyBootstrap(cached.bootstrap, true);
+          setError("تم عرض نسخة محفوظة من البيانات — تعذر الاتصال بالخادم");
+          return true;
+        }
+        setError(err instanceof Error ? err.message : "تعذر تحميل البيانات");
+        const stored = getStoredUser();
+        if (!stored) redirectToLogin();
+        return false;
+      } finally {
+        inflight.current = false;
+        if (mounted.current) setLoading(false);
+      }
+    },
+    [applyBootstrap],
+  );
+
+  useEffect(() => {
+    mounted.current = true;
+    setOnline(isOnline());
+    const goOnline = () => {
+      setOnline(true);
+      refresh(true).catch(() => {});
+    };
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    refresh().catch(() => {});
+    return () => {
+      mounted.current = false;
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const login = useCallback(async (username: string, password: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await apiLogin(username, password);
+      const bootstrap = await getBootstrap();
+      applyBootstrap(bootstrap, false);
+      saveCachedSnapshot(bootstrap, bootstrap.meta?.counts);
+      return result.user;
+    } finally {
+      setLoading(false);
+    }
+  }, [applyBootstrap]);
+
+  const logout = useCallback(() => {
+    logoutLocal();
+    clearLocalSession();
+    clearCachedSnapshot();
+    setUserState(null);
+    setData(null);
+    router.replace("/");
+  }, [router]);
+
+  const reload = useCallback(async () => {
+    await refresh(true);
+  }, [refresh]);
+
+  const setUser = useCallback((next: User | null) => {
+    setUserState(next);
+    if (next && typeof window !== "undefined") {
+      storeSession({ user: next });
+    }
+  }, []);
+
+  const readAll = useCallback(async () => {
+    await readAllNotifications();
+    await refresh(true);
+  }, [refresh]);
+
+  const markRead = useCallback(async (id: string) => {
+    await readNotification(id);
+    await refresh(true);
+  }, [refresh]);
+
+  const notifications = useMemo(() => data?.notifications || [], [data]);
+  const unread = useMemo(() => notifications.filter((item) => !item.read).length, [notifications]);
+
+  const value = useMemo<AppContextValue>(
+    () => ({
+      user,
+      data,
+      notifications,
+      unread,
+      loading,
+      offline,
+      error,
+      online,
+      syncedAt,
+      refresh,
+      reload,
+      login,
+      logout,
+      readAll,
+      markRead,
+      setUser,
+    }),
+    [user, data, notifications, unread, loading, offline, error, online, syncedAt, refresh, reload, login, logout, readAll, markRead, setUser],
+  );
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+}
+
+export function useApp(): AppContextValue {
+  const context = useContext(AppContext);
+  if (!context) throw new Error("useApp يجب أن يُستخدم داخل AppProvider");
+  return context;
+}
+
+export function useCachedSnapshot(): CachedSnapshot | null {
+  return useMemo(() => getCachedSnapshot(), []);
+}
+
+export function clearAllLocalData() {
+  clearSession();
+  clearLocalSession();
+  clearCachedSnapshot();
+}
