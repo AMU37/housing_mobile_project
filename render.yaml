@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: housing-system-api
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: STATE_KEY
+        value: housing_state_v1
+      - key: CORS_ORIGINS
+        value: http://localhost:3444,http://127.0.0.1:3444,http://localhost:3000,http://127.0.0.1:3000
+      - key: FORCE_PASSWORD_CHANGE
+        value: "false"
+      - key: MAX_UPLOAD_MB
+        value: "25"
+      - key: AUDIT_LIMIT
+        value: "8000"
