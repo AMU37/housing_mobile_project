@@ -20,7 +20,7 @@ services:
       - key: STATE_KEY
         value: housing_state_v1
       - key: CORS_ORIGINS
-        value: http://localhost:3444,http://127.0.0.1:3444,http://localhost:3000,http://127.0.0.1:3000
+        value: https://localhost,capacitor://localhost,http://localhost:3444,http://127.0.0.1:3444
       - key: FORCE_PASSWORD_CHANGE
         value: "false"
       - key: MAX_UPLOAD_MB
