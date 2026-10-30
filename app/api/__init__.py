@@ -1,1 +1,0 @@
-"""Housing backend package."""
